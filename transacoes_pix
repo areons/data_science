@@ -1,0 +1,51 @@
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+pio.templates.default = "plotly_white"
+
+# Carregar o dataset
+df = pd.read_csv("comprovantes_pix_10000_anomalias.csv", sep=";")
+
+# Convertendo a coluna 'DataHora' para datetime, tratando erros
+df["DataHora"] = pd.to_datetime(df["DataHora"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
+
+# 1. Distribuição de Valores de Transação (Anômalas vs. Normais)
+fig1 = px.histogram(df, x="Valor", color="Anomalia",
+                    title="Distribuição de Valores de Transação (Anômalas vs. Normais)",
+                    labels={"Valor": "Valor da Transação (BRL)", "Anomalia": "Anomalia (0=Normal, 1=Anômala)"},
+                    marginal="box", # Adiciona um box plot para ver a distribuição
+                    hover_data=df.columns)
+fig1.write_image("valor_transacao_anomalia.png")
+
+# 2. Anomalias por Banco do Pagador
+anomalies_by_pagador_bank = df[df["Anomalia"] == 1]["Pagador_Banco"].value_counts().reset_index()
+anomalies_by_pagador_bank.columns = ["Banco", "Contagem_Anomalias"]
+fig2 = px.bar(anomalies_by_pagador_bank, x="Banco", y="Contagem_Anomalias",
+              title="Número de Anomalias por Banco do Pagador",
+              labels={"Banco": "Banco do Pagador", "Contagem_Anomalias": "Número de Anomalias"})
+fig2.write_image("anomalias_por_pagador_banco.png")
+
+# 3. Anomalias por Tipo de Chave Pix
+anomalies_by_key_type = df[df["Anomalia"] == 1]["TipoChave"].value_counts().reset_index()
+anomalies_by_key_type.columns = ["Tipo_Chave", "Contagem_Anomalias"]
+fig3 = px.pie(anomalies_by_key_type, values="Contagem_Anomalias", names="Tipo_Chave",
+              title="Proporção de Anomalias por Tipo de Chave Pix",
+              hole=0.3)
+fig3.write_image("anomalias_por_tipo_chave.png")
+
+# 4. Anomalias ao longo do Tempo (por dia)
+df["Data"] = df["DataHora"].dt.date
+anomalies_over_time = df[df["Anomalia"] == 1].groupby("Data").size().reset_index(name="Contagem_Anomalias")
+fig4 = px.line(anomalies_over_time, x="Data", y="Contagem_Anomalias",
+               title="Anomalias de Transações Pix ao Longo do Tempo",
+               labels={"Data": "Data", "Contagem_Anomalias": "Número de Anomalias"})
+fig4.write_image("anomalias_ao_longo_do_tempo.png")
+
+# 5. Status de Transações Anômalas
+anomalous_status = df[df["Anomalia"] == 1]["Status"].value_counts().reset_index()
+anomalous_status.columns = ["Status", "Contagem_Anomalias"]
+fig5 = px.bar(anomalous_status, x="Status", y="Contagem_Anomalias",
+              title="Status das Transações Marcadas como Anômalas",
+              labels={"Status": "Status da Transação", "Contagem_Anomalias": "Número de Anomalias"})
+fig5.write_image("status_anomalias.png")
