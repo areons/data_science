@@ -1,0 +1,161 @@
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
+
+gdf = gpd.read_file('/home/ubuntu/crimes_geopandas.geojson')
+
+# Análise do status das investigações
+status_counts = gdf['Status Desc'].value_counts()
+total = len(gdf)
+
+print(f"\nTotal de casos: {total:,}")
+
+# figura com múltiplos gráficos
+fig = plt.figure(figsize=(16, 10))
+gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
+
+# GRÁFICO 1: Pizza com destaque para casos não resolvidos
+ax1 = fig.add_subplot(gs[0, :])
+
+# Agrupar status similares
+status_grouped = pd.DataFrame({
+    'Status': ['Investigação em Andamento', 'Prisão de Adulto', 'Outros'],
+    'Count': [
+        status_counts.get('Invest Cont', 0),
+        status_counts.get('Adult Arrest', 0) + status_counts.get('Adult Other', 0),
+        total - status_counts.get('Invest Cont', 0) - status_counts.get('Adult Arrest', 0) - status_counts.get('Adult Other', 0)
+    ]
+})
+
+colors = ['#e74c3c', '#27ae60', '#95a5a6']  # Vermelho, Verde, Cinza
+explode = (0.1, 0, 0)  # Destacar investigações em andamento
+
+wedges, texts, autotexts = ax1.pie(status_grouped['Count'], 
+                                     labels=status_grouped['Status'],
+                                     autopct=lambda pct: f'{pct:.1f}%\n({int(pct/100*total):,})',
+                                     startangle=90,
+                                     colors=colors,
+                                     explode=explode,
+                                     textprops={'fontsize': 13, 'fontweight': 'bold'},
+                                     pctdistance=0.75)
+
+# Destacar o texto de investigações em andamento
+autotexts[0].set_color('white')
+autotexts[0].set_fontsize(14)
+
+ax1.set_title('Status das Investigações: A Realidade Alarmante\nApenas 1 em cada 11 crimes resulta em prisão', 
+             fontsize=16, fontweight='bold', pad=20)
+
+# GRÁFICO 2: Barras horizontais comparativas
+ax2 = fig.add_subplot(gs[1, 0])
+
+status_for_bar = status_grouped.sort_values('Count', ascending=True)
+bars = ax2.barh(status_for_bar['Status'], status_for_bar['Count'], 
+                color=['#95a5a6', '#27ae60', '#e74c3c'])
+
+ax2.set_xlabel('Número de Casos', fontsize=12, fontweight='bold')
+ax2.set_title('Comparação Absoluta de Status', fontsize=13, fontweight='bold', pad=10)
+
+# Adicionar valores nas barras
+for i, (idx, row) in enumerate(status_for_bar.iterrows()):
+    ax2.text(row['Count'] + 10000, i, f"{row['Count']:,}", 
+            va='center', fontsize=11, fontweight='bold')
+
+ax2.grid(True, alpha=0.3, axis='x')
+
+# GRÁFICO 3: Funil de resolução
+ax3 = fig.add_subplot(gs[1, 1])
+
+# Criar dados do funil
+funnel_data = [
+    ('Crimes\nReportados', total, '#3498db'),
+    ('Investigações\nIniciadas', total, '#f39c12'),
+    ('Casos com\nProgresso', total - status_counts.get('Invest Cont', 0), '#e67e22'),
+    ('Prisões\nRealizadas', status_counts.get('Adult Arrest', 0) + status_counts.get('Adult Other', 0), '#27ae60')
+]
+
+y_positions = range(len(funnel_data))
+widths = [d[1] for d in funnel_data]
+labels = [d[0] for d in funnel_data]
+colors_funnel = [d[2] for d in funnel_data]
+
+# Criar barras horizontais com larguras decrescentes
+for i, (label, width, color) in enumerate(zip(labels, widths, colors_funnel)):
+    ax3.barh(i, width, height=0.6, color=color, edgecolor='black', linewidth=2)
+    
+    # Adicionar texto
+    percentage = (width / total) * 100
+    ax3.text(width/2, i, f'{label}\n{width:,}\n({percentage:.1f}%)', 
+            ha='center', va='center', fontsize=10, fontweight='bold', color='white')
+
+ax3.set_yticks([])
+ax3.set_xlabel('Número de Casos', fontsize=12, fontweight='bold')
+ax3.set_title('Funil de Resolução de Crimes', fontsize=13, fontweight='bold', pad=10)
+ax3.set_xlim(0, total * 1.1)
+ax3.grid(True, alpha=0.3, axis='x')
+
+# Adicionar seta indicando perda
+ax3.annotate('', xy=(widths[-1], 3.5), xytext=(widths[0], 3.5),
+            arrowprops=dict(arrowstyle='<->', color='red', lw=3))
+ax3.text((widths[0] + widths[-1])/2, 3.7, 
+         f'Perda de {((total - widths[-1])/total*100):.1f}%', 
+         ha='center', fontsize=11, fontweight='bold', color='red')
+
+plt.suptitle('O Desafio da Resolução de Crimes em Los Angeles (2020-2025)', 
+             fontsize=18, fontweight='bold', y=0.98)
+
+plt.tight_layout()
+plt.savefig('/home/ubuntu/viz_09_status_investigacoes.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+print("\n✓ Visualização criada: viz_09_status_investigacoes.png")
+
+# CRIAR SEGUNDA VISUALIZAÇÃO: Evolução do status ao longo dos anos
+print("\nCriando visualização de evolução temporal do status...")
+
+fig, ax = plt.subplots(figsize=(14, 7))
+
+# Preparar dados por ano
+gdf['YEAR'] = pd.to_datetime(gdf['DATE OCC']).dt.year
+yearly_status = gdf[gdf['YEAR'] < 2025].groupby(['YEAR', 'Status Desc']).size().unstack(fill_value=0)
+
+# Calcular percentuais
+yearly_status_pct = yearly_status.div(yearly_status.sum(axis=1), axis=0) * 100
+
+# Plotar apenas as principais categorias
+main_categories = ['Invest Cont', 'Adult Arrest']
+colors_line = {'Invest Cont': '#e74c3c', 'Adult Arrest': '#27ae60'}
+
+for category in main_categories:
+    if category in yearly_status_pct.columns:
+        ax.plot(yearly_status_pct.index, yearly_status_pct[category], 
+               marker='o', linewidth=3, markersize=10, 
+               label=category, color=colors_line[category])
+        
+        # Adicionar valores
+        for year, value in yearly_status_pct[category].items():
+            ax.text(year, value + 1, f'{value:.1f}%', 
+                   ha='center', fontsize=10, fontweight='bold')
+
+ax.set_xlabel('Ano', fontsize=13, fontweight='bold')
+ax.set_ylabel('Percentual de Casos (%)', fontsize=13, fontweight='bold')
+ax.set_title('Evolução da Taxa de Resolução de Crimes ao Longo dos Anos\nA situação permanece crítica', 
+            fontsize=15, fontweight='bold', pad=20)
+ax.legend(fontsize=12, loc='best', labels=['Investigação em Andamento', 'Prisão Realizada'])
+ax.grid(True, alpha=0.3)
+ax.set_ylim(0, 100)
+
+# Adicionar linha de referência
+ax.axhline(y=50, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+ax.text(2020.1, 52, '50% (referência)', fontsize=9, color='gray')
+
+plt.tight_layout()
+plt.savefig('/home/ubuntu/viz_10_evolucao_status.png', dpi=300, bbox_inches='tight')
+plt.close()
+
+print(f"  • Taxa de investigações em andamento: {(status_counts.get('Invest Cont', 0)/total*100):.1f}%")
+print(f"  • Taxa de prisões: {((status_counts.get('Adult Arrest', 0) + status_counts.get('Adult Other', 0))/total*100):.1f}%")
